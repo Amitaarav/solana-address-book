@@ -39,6 +39,7 @@ export function deriveATA(ownerAddress: string, mintAddress: string) {
   return ata.toBase58();
 }
 
+// address is Public key wallet address
 export function verifySignature(address: string, message: string, signature: string): boolean {
   try {
     const pubkey = new PublicKey(address).toBytes();
@@ -53,6 +54,7 @@ export function verifySignature(address: string, message: string, signature: str
 
 export function derivePDA(programId: string, seeds: string[]) {
   const programPubkey = new PublicKey(programId);
+
   const seedBuffers = seeds.map(seed => {
     const buffer = Buffer.from(seed, 'utf8');
     if (buffer.length > 32) {
@@ -62,5 +64,6 @@ export function derivePDA(programId: string, seeds: string[]) {
   });
   
   const [pda, bump] = PublicKey.findProgramAddressSync(seedBuffers, programPubkey);
+  
   return { pda: pda.toBase58(), bump };
 }

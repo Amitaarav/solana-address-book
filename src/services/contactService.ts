@@ -15,6 +15,7 @@ class ContactService {
     }
 
     const type: ContactType = isPDA(data.address) ? 'pda' : 'wallet';
+    
     const contact: Contact = {
       id: this.nextId++,
       name: data.name,

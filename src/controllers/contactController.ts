@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { contactService } from '../services/contactService';
 import { deriveATA, isValidSolanaAddress } from '../utils/solana';
 
+// create contact
 export async function createContact(req: Request, res: Response) {
   try {
     const contact = await contactService.createContact(req.body);
