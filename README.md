@@ -27,21 +27,24 @@ The API processes requests through a request-response cycle involving validation
 
 ### Request Flow Diagram
 
+## 📊 Request Flow Architecture
+
 ```mermaid
-graph TD
-    A[Client Request] --> B{Middleware}
-    B -->|Zod Validation| C[Controller]
+flowchart TD
+    A[Client Request] --> B{Validation (Zod)}
+    
+    B -->|Valid| C[Handle Request]
     B -->|Invalid| D[400 Bad Request]
-    
-    C --> E[Service Layer]
-    C --> F[Solana Utils]
-    
-    E -->|In-memory Storage| G[Contact Data]
-    F -->|@solana/web3.js| H[Solana Network Info]
-    
-    G --> I[Controller]
+
+    C --> E[Contact Service]
+    C --> F[Solana Service]
+
+    E --> G[(In-memory Contact Store)]
+    F --> H[(Solana Network via @solana/web3.js)]
+
+    G --> I[Format Response]
     H --> I
-    
+
     I --> J[JSON Response]
 ```
 
