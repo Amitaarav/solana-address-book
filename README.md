@@ -27,68 +27,126 @@ The API processes requests through a request-response cycle involving validation
 
 ### Request Flow Diagram
 
-## 📊 Request Flow Architecture
-
 ```mermaid
-flowchart TD
-    A[Client Request] --> B{Validation (Zod)}
-    
-    B -->|Valid| C[Handle Request]
+graph TD
+    A[Client Request] --> B{Middleware}
+    B -->|Zod Validation| C[Controller]
     B -->|Invalid| D[400 Bad Request]
-
-    C --> E[Contact Service]
-    C --> F[Solana Service]
-
-    E --> G[(In-memory Contact Store)]
-    F --> H[(Solana Network via @solana/web3.js)]
-
-    G --> I[Format Response]
+    
+    C --> E[Service Layer]
+    C --> F[Solana Utils]
+    
+    E -->|In-memory Storage| G[Contact Data]
+    F -->|@solana/web3.js| H[Solana Network Info]
+    
+    G --> I[Controller]
     H --> I
-
+    
     I --> J[JSON Response]
 ```
 
-### Detailed Flow Explanation
-1.  **Validation**: Every incoming request for creating/updating contacts or performing crypto operations is validated using **Zod** schemas to ensure data integrity.
-2.  **Contact Management**: Handled by the `ContactService`, which maintains an in-memory database of addresses. It automatically detects if an address is a standard Wallet or a Program Derived Address (PDA).
-3.  **Crypto Utilities**: Leveraging `@solana/web3.js`, the API provides specialized tools for deriving accounts and verifying ownership without needing a frontend wallet connection.
+---
 
-## ✨ Key Features & Logic
+### 3. Associated Token Account (ATA) Derivation Flow
 
-### 1. Contact Management (CRUD)
--   **Create Contact**: Validates the Solana address and stores it with a name.
--   **Auto-Detection**: Automatically identifies if the added address is a `wallet` (on-curve) or a `pda` (off-curve).
--   **Filter & Sort**: Retrieve contacts by type and sorted by ID.
+```mermaid
+flowchart LR
+    Owner["Owner Address<br/>(32 bytes)"] --> Seeds
+    TokenProg["Token Program ID<br/>(Tokenkeg... 32 bytes)"] --> Seeds
+    Mint["Token Mint<br/>(USDC/USDT 32 bytes)"] --> Seeds
 
-### 2. Solana Utilities
--   **ATA Derivation**: Calculate the Associated Token Account for any user and any token mint.
--   **Signature Verification**: Verify that a specific message was signed by a specific Solana address (Ed25519).
--   **PDA Derivation**: Programmatically find PDAs using a Program ID and an array of seeds.
+    subgraph Derivation ["Solana Derivation Engine"]
+        Seeds["Seed Array<br/>[Owner, TokenProgram, Mint]"] --> Program["Associated Token Program<br/>(ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL)"]
+        Program --> FindPDA["PublicKey.findProgramAddressSync()"]
+    end
 
-## 🛠 Crucial Functions Reference
-
-These functions located in `src/utils/solana.ts` are the core of the project's Solana integration:
-
-### `isValidSolanaAddress(address: string): boolean`
-Validates if a string is a properly formatted Solana Public Key.
-```typescript
-export function isValidSolanaAddress(address: string): boolean {
-  try {
-    new PublicKey(address);
-    return true;
-  } catch {
-    return false;
-  }
-}
+    FindPDA --> Result["Deterministic ATA Address<br/>+ Canonical Bump"]
 ```
 
-### `deriveATA(ownerAddress: string, mintAddress: string): string`
-Derives the Associated Token Account (ATA) address for a given owner and token mint.
+---
+
+### 4. Cryptographic Ed25519 Signature Verification Flow
+
+```mermaid
+flowchart TD
+    Msg["Message Payload<br/>(UTF-8 String)"] --> MsgBytes["Buffer.from(message, 'utf8')"]
+    Sig["Signature<br/>(Base58 String)"] --> SigBytes["bs58.decode(signature)<br/>(64 bytes)"]
+    Pubkey["Signer Address<br/>(Base58 String)"] --> PubBytes["new PublicKey(address).toBytes()<br/>(32 bytes)"]
+
+    MsgBytes --> NaclVerify["nacl.sign.detached.verify()"]
+    SigBytes --> NaclVerify
+    PubBytes --> NaclVerify
+
+    NaclVerify --> Decision{"Valid Signature?"}
+    Decision -- Yes --> Success["200 OK: { valid: true }<br/>(Green Verified State)"]
+    Decision -- No --> Failure["200 OK: { valid: false }<br/>(Red Signature Mismatch)"]
+```
+
+---
+
+## 🏗 Directory Structure
+
+```text
+solana-address-book/
+├── backend/                         # Dedicated Express 5 API Server
+│   ├── src/
+│   │   ├── controllers/
+│   │   │   ├── contactController.ts # Contact directory CRUD & ATA derivation
+│   │   │   └── cryptoController.ts  # Signature verification & PDA calculator
+│   │   ├── middleware/
+│   │   │   └── validation.ts        # Zod request validation schemas
+│   │   ├── routes/
+│   │   │   └── api.ts               # Express 5 API route declarations
+│   │   ├── services/
+│   │   │   └── contactService.ts    # In-memory storage & address uniqueness
+│   │   ├── types/
+│   │   │   └── index.ts             # Backend TypeScript interfaces
+│   │   ├── utils/
+│   │   │   └── solana.ts            # @solana/web3.js & tweetnacl utilities
+│   │   └── index.ts                 # Express entry point & static SPA fallback
+│   ├── tsconfig.json
+│   └── package.json
+│
+├── frontend/                        # React 18 + Vite Frontend Application
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── Header.tsx           # App header, brand mark & tab switcher
+│   │   │   ├── ContactList.tsx      # Directory view, search filter & empty states
+│   │   │   ├── ContactCard.tsx      # Contact item with copy & quick actions
+│   │   │   ├── AddContactModal.tsx  # Add address dialog with live curve badge
+│   │   │   ├── EditContactModal.tsx # Update contact label dialog
+│   │   │   ├── AtaDeriver.tsx       # ATA calculation tool with quick presets
+│   │   │   ├── VerifySignature.tsx  # Ed25519 signature verifier with sample loader
+│   │   │   ├── PdaCalculator.tsx    # Multi-seed PDA explorer with dynamic rows
+│   │   │   └── Toast.tsx            # Fluid notification toast stack
+│   │   ├── hooks/
+│   │   │   └── useContacts.ts       # React state & API client hook
+│   │   ├── types/
+│   │   │   └── index.ts             # Domain models
+│   │   ├── App.tsx                  # Root layout & tab router
+│   │   ├── main.tsx                 # React DOM mount point
+│   │   └── styles.css               # Design system & interaction tokens
+│   ├── public/
+│   │   └── favicon.svg
+│   ├── index.html                   # HTML entry point
+│   ├── vite.config.ts               # Vite proxy config
+│   ├── tsconfig.json
+│   └── package.json
+│
+├── public/                          # Server-side static fallback UI
+└── README.md                        # Documentation
+```
+
+---
+
+## 🛠 Core Solana Implementation Details
+
+### 1. Associated Token Account (ATA) Derivation
 ```typescript
-export function deriveATA(ownerAddress: string, mintAddress: string) {
+export function deriveATA(ownerAddress: string, mintAddress: string): string {
   const ownerPubkey = new PublicKey(ownerAddress);
   const mintPubkey = new PublicKey(mintAddress);
-  
+
   const [ata] = PublicKey.findProgramAddressSync(
     [
       ownerPubkey.toBuffer(),
@@ -97,59 +155,80 @@ export function deriveATA(ownerAddress: string, mintAddress: string) {
     ],
     ASSOCIATED_TOKEN_PROGRAM
   );
-  
+
   return ata.toBase58();
 }
 ```
 
-### `verifySignature(address: string, message: string, signature: string): boolean`
-Verifies an Ed25519 signature of a message against a public key. Crucial for non-custodial authentication.
+### 2. Dynamic Seed PDA Derivation (Pubkey + UTF-8 Support)
 ```typescript
-export function verifySignature(address: string, message: string, signature: string): boolean {
-  try {
-    const pubkey = new PublicKey(address).toBytes();
-    const messageBytes = Buffer.from(message, 'utf8');
-    const signatureBytes = bs58.decode(signature);
-    
-    return nacl.sign.detached.verify(messageBytes, signatureBytes, pubkey);
-  } catch {
-    return false;
-  }
-}
-```
-
-### `derivePDA(programId: string, seeds: string[])`
-Finds a Program Derived Address and its bump seed.
-```typescript
-export function derivePDA(programId: string, seeds: string[]) {
+export function derivePDA(programId: string, seeds: string[]): { pda: string; bump: number } {
   const programPubkey = new PublicKey(programId);
-  const seedBuffers = seeds.map(seed => Buffer.from(seed, 'utf8'));
+
+  const seedBuffers = seeds.map(seed => {
+    // If the seed is a 32-byte Base58 pubkey, use its decoded binary representation
+    if (isValidSolanaAddress(seed)) {
+      try {
+        return new PublicKey(seed).toBuffer();
+      } catch {}
+    }
+    const buffer = Buffer.from(seed, 'utf8');
+    if (buffer.length > 32) {
+      throw new Error(`Seed "${seed}" exceeds 32 bytes limit`);
+    }
+    return buffer;
+  });
+
   const [pda, bump] = PublicKey.findProgramAddressSync(seedBuffers, programPubkey);
   return { pda: pda.toBase58(), bump };
 }
 ```
 
+---
+
+## 📡 API Endpoints Reference
+
+### Contacts Directory
+| Method | Endpoint | Description | Sample Request | Sample Response |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/contacts` | Register a new contact with automatic on/off-curve detection | `{"name":"Cold Storage","address":"7YttH9..."}` | `{"id":1,"name":"Cold Storage","address":"7YttH9...","type":"wallet"}` |
+| `GET` | `/api/contacts` | Retrieve contacts (optional `?type=wallet` or `?type=pda`) | — | `[{"id":1,"name":"Cold Storage",...}]` |
+| `GET` | `/api/contacts/:id` | Fetch specific contact by integer ID | — | `{"id":1,"name":"Cold Storage",...}` |
+| `PUT` | `/api/contacts/:id` | Update contact label | `{"name":"Treasury Primary"}` | `{"id":1,"name":"Treasury Primary",...}` |
+| `DELETE` | `/api/contacts/:id` | Remove contact from directory | — | `{"message":"Contact deleted","id":1}` |
+
+### Cryptographic & Utility Tools
+| Method | Endpoint | Description | Sample Request | Sample Response |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/contacts/:id/derive-ata` | Derive ATA for contact + token mint | `{"mintAddress":"EPjFWdd5..."}` | `{"ata":"4zMMC...","owner":"7Ytt...","mint":"EPjFW..."}` |
+| `POST` | `/api/verify-ownership` | Verify detached Ed25519 signature | `{"address":"9WzD...","message":"Auth","signature":"3X5i..."}` | `{"valid":true,"verifiedAt":"2026-..."}` |
+| `POST` | `/api/derive-pda` | Derive custom PDA & canonical bump | `{"programId":"1111...","seeds":["vault","7Ytt..."]}` | `{"pda":"Gh9Z...","bump":255,"isOffCurve":true}` |
+| `GET` | `/api/check-address` | Live address verification & curve state | `?address=7YttH9...` | `{"valid":true,"type":"wallet","isOnCurve":true}` |
+
+---
+
 ## 🚀 Getting Started
 
-1.  **Install Dependencies**:
-    ```bash
-    npm install
-    ```
-2.  **Run Development Server**:
-    ```bash
-    npm run dev
-    ```
-3.  **Default Port**: The API runs on `http://localhost:3000`.
+### Prerequisites
+- **Node.js**: v18.0.0 or higher
+- **npm**: v9.0.0 or higher
 
-## 📡 API Endpoints
+### Option 1: Unified Dev Server (Backend + UI)
+```bash
+# In solana-address-book root directory:
+npm install
+npm run dev
+```
+Open **`http://localhost:3000`** in your browser.
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/contacts` | Create a new contact |
-| `GET` | `/api/contacts` | Get all contacts (optional `type` query) |
-| `GET` | `/api/contacts/:id` | Get contact by ID |
-| `PUT` | `/api/contacts/:id` | Update contact name |
-| `DELETE` | `/api/contacts/:id` | Delete a contact |
-| `POST` | `/api/contacts/:id/derive-ata` | Derive ATA for a contact + mint |
-| `POST` | `/api/verify-ownership` | Verify a message signature |
-| `POST` | `/api/derive-pda` | Derive a PDA from seeds |
+### Option 2: Fullstack with Vite HMR (Recommended for Frontend Work)
+```bash
+# Terminal 1 - Backend Server:
+npm run dev
+
+# Terminal 2 - React Frontend:
+cd frontend
+npm install
+npm run dev
+```
+Open **`http://localhost:5173`** for Vite hot module replacement (API calls are automatically proxied to port 3000).
