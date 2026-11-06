@@ -7,39 +7,45 @@ import apiRoutes from './routes/api.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Trusted origins for CORS
+// Trusted frontend origins
 const allowedOrigins = new Set([
-  'http://localhost:3000',
+  'https://solana-address-book.vercel.app',
   'http://localhost:5173',
-  'http://127.0.0.1:3000',
   'http://127.0.0.1:5173',
-  process.env.FRONTEND_URL || '',
 ]);
 
-// Security Middlewares
-app.use(
-  helmet({
-    contentSecurityPolicy: false, // Disabled for local development Vite compatibility
-    crossOriginEmbedderPolicy: false,
-    xContentTypeOptions: true,
-    xDnsPrefetchControl: { allow: false },
-    xFrameOptions: { action: 'sameorigin' },
-  })
-);
+// Add origins configured through Render environment variables
+const configuredOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 
+configuredOrigins.forEach((origin) => allowedOrigins.add(origin));
+
+// CORS Configuration
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (such as mobile apps or curl) or if origin is in allowlist
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error('Cross-Origin Request Blocked: Origin not authorized by CORS policy'));
+      // Allow requests without an Origin header (e.g. server-to-server)
+      if (!origin) {
+        return callback(null, true);
       }
+
+      const normalizedOrigin = origin.replace(/\/+$/, '');
+
+      if (allowedOrigins.has(normalizedOrigin)) {
+        return callback(null, true);
+      }
+
+      console.warn(`[CORS] Blocked origin: ${origin}`);
+      return callback(null, false);
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+
     allowedHeaders: ['Content-Type', 'Authorization'],
-    maxAge: 86400, // 24 hours pre-flight caching
+
+    maxAge: 86400,
   })
 );
 
@@ -82,9 +88,14 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'Internal server error' });
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`Solana Address Book Server running on http://localhost:${PORT}`);
-  console.log(`API endpoints accessible at http://localhost:${PORT}/api/contacts`);
-});
+// Start Server (only when executed directly, not when invoked as a serverless function)
+if (process.env.VERCEL !== '1') {
+  app.listen(PORT, () => {
+    console.log(`Solana Address Book Server running on http://localhost:${PORT}`);
+    console.log(`API endpoints accessible at http://localhost:${PORT}/api/contacts`);
+  });
+}
+
+export default app;
+export { app };
 
