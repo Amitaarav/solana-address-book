@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { PdaResult } from '../types';
+import { API_BASE } from '../lib/api';
 
 interface PdaCalculatorProps {
   onCopy: (text: string) => void;
@@ -46,7 +47,7 @@ export const PdaCalculator: React.FC<PdaCalculatorProps> = ({ onCopy }) => {
     setResult(null);
 
     try {
-      const res = await fetch('/api/derive-pda', {
+      const res = await fetch(`${API_BASE}/derive-pda`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

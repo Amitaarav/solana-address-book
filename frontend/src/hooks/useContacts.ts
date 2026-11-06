@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Contact, ToastMessage } from '../types';
+import { API_BASE } from '../lib/api';
 
 export function useContacts() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -23,7 +24,7 @@ export function useContacts() {
   const fetchContacts = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/contacts');
+      const res = await fetch(`${API_BASE}/contacts`);
       if (!res.ok) throw new Error('Failed to fetch contacts');
       const data = await res.json();
       setContacts(data);
@@ -40,7 +41,7 @@ export function useContacts() {
 
   const createContact = async (payload: { name: string; address: string }): Promise<boolean> => {
     try {
-      const res = await fetch('/api/contacts', {
+      const res = await fetch(`${API_BASE}/contacts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -62,7 +63,7 @@ export function useContacts() {
 
   const updateContact = async (id: number, name: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/contacts/${id}`, {
+      const res = await fetch(`${API_BASE}/contacts/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
@@ -84,7 +85,7 @@ export function useContacts() {
 
   const deleteContact = async (id: number): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/contacts/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE}/contacts/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to delete contact');

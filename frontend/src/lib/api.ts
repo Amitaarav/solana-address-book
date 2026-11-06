@@ -1,11 +1,3 @@
-/**
- * API client configuration.
- * 
- * In development, Vite proxies /api/* to the backend server.
- * In production (Vercel), /api/* routes are handled by the serverless function
- * on the same origin, so the base is just '/api'.
- */
-
 export const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api';
 
 type RequestOptions = {

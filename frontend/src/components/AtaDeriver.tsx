@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Contact, AtaResult } from '../types';
+import { API_BASE } from '../lib/api';
 
 interface AtaDeriverProps {
   contacts: Contact[];
@@ -40,7 +41,7 @@ export const AtaDeriver: React.FC<AtaDeriverProps> = ({
       
       let res;
       if (matchedContact) {
-        res = await fetch(`/api/contacts/${matchedContact.id}/derive-ata`, {
+        res = await fetch(`${API_BASE}/contacts/${matchedContact.id}/derive-ata`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mintAddress: mint.trim() }),
@@ -48,7 +49,7 @@ export const AtaDeriver: React.FC<AtaDeriverProps> = ({
       } else {
         // Fall back to deriving PDA via the standard ATA seeds
         // Seeds for ATA: [owner, TOKEN_PROGRAM, mint]
-        res = await fetch(`/api/derive-pda`, {
+        res = await fetch(`${API_BASE}/derive-pda`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

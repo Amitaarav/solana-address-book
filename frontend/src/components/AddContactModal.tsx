@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../lib/api';
 
 interface AddContactModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({
 
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/check-address?address=${encodeURIComponent(trimmed)}`);
+        const res = await fetch(`${API_BASE}/check-address?address=${encodeURIComponent(trimmed)}`);
         if (res.ok) {
           const data = await res.json();
           setAddressStatus({ valid: true, type: data.type });

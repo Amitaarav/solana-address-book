@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { VerifyResult } from '../types';
+import { API_BASE } from '../lib/api';
 
 export const VerifySignature: React.FC = () => {
   const [address, setAddress] = useState('');
@@ -18,7 +19,7 @@ export const VerifySignature: React.FC = () => {
     setResult(null);
 
     try {
-      const res = await fetch('/api/verify-ownership', {
+      const res = await fetch(`${API_BASE}/verify-ownership`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
