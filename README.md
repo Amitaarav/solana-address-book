@@ -1,48 +1,84 @@
-# Solana Address Book API
+# Solana Address Book & Cryptographic Registry
 
-A comprehensive backend service built with TypeScript and Express.js for managing a Solana address book and providing essential cryptographic utilities for the Solana blockchain.
+A fullstack Solana address book and cryptographic workbench. Built with a decoupled **Express 5 + TypeScript** API backend powered by `@solana/web3.js` and a **React 18 + Vite** frontend designed with **Impeccable** craft principles and **Emil Kowalski-inspired** tactile micro-interactions.
 
-## 🏗 Project Structure
+---
 
-The project follows a standard layered architecture to ensure separation of concerns and maintainability.
+## 🧭 Architectural Approach
 
-```text
-solana-address-book/
-├── src/
-│   ├── controllers/      # Request handlers (Contact & Crypto logic)
-│   ├── middleware/       # Zod validation and error handling
-│   ├── routes/           # API route definitions
-│   ├── services/         # Business logic (In-memory contact storage)
-│   ├── utils/            # Solana-specific utility functions
-│   ├── types/            # TypeScript interface definitions
-│   └── index.ts          # Application entry point
-├── .env                  # Environment variables
-├── tsconfig.json         # TypeScript configuration
-└── package.json          # Dependencies and scripts
-```
+The system is designed with a strict separation of concerns across cryptographic primitives, API routing, data validation, and reactive UI state:
 
-## 🔄 Logic & Workflow
+1. **Deterministic Cryptographic Primitives**:
+   - **Curve Verification**: Differentiates standard wallet keypairs (which lie on the Ed25519 elliptic curve) from Program Derived Addresses (PDAs, which intentionally fall *off* the curve) using `PublicKey.isOnCurve()`.
+   - **Canonical ATA Derivation**: Implements the official Solana SPL Associated Token Account specification using `findProgramAddressSync` with seeds `[ownerPublicKey, TOKEN_PROGRAM_ID, mintPublicKey]`.
+   - **Flexible PDA Engine**: Accepts both UTF-8 string seeds and 32-byte Base58 decoded public key buffers, enforcing the Solana runtime's 32-byte per-seed limit.
+   - **Dual-Mode Signature Verification**: Uses `tweetnacl` to verify detached Ed25519 signatures, supporting both raw UTF-8 strings and standard **Solana Off-Chain Message Framing** (`\xffsolana offchain...`).
 
-The API processes requests through a request-response cycle involving validation, control, and service layers.
+2. **Backend Robustness (Express 5 + Zod)**:
+   - Every input payload is strictly typed and parsed with **Zod** schemas before reaching controller handlers.
+   - Custom error formatters return clean, user-friendly validation messages.
+   - Express 5 compatibility layer handles static SPA asset serving without breaking `path-to-regexp` v8 parameter conventions.
 
-### Request Flow Diagram
+3. **Security Architecture & Hardening**:
+   - **Multi-Tiered Rate Limiting**: Zero-dependency sliding window rate limiter protects endpoints against volumetric DDoS and CPU-intensive cryptographic derivations.
+   - **Capacity Guarding (DoS Defense)**: Enforces an in-memory limit of 500 contacts to prevent Out-of-Memory heap crashes from automated script floods.
+   - **Solana Runtime Bounds**: Enforces runtime constraints of at most 16 seeds and 32 bytes per seed on PDA derivations.
+   - **Payload & CORS Boundaries**: Request bodies are capped at 16KB with origin-restricted CORS allowlists.
+
+4. **Frontend Craft & Ergonomics (Emil Kowalski & Impeccable)**:
+   - **Operate Mode**: High visual density, scannable tabular typography, and dark-mode palette (`#09090b` canvas, `#18181c` surfaces).
+   - **Live Address Feedback**: Real-time debounced address analyzer that displays whether an address is an on-curve wallet or an off-curve PDA *as the user types*.
+   - **Tactile Micro-Interactions**: Active press scaling (`transform: scale(0.97)`), copy-to-clipboard morphing checkmarks, quick ATA derivation chips, and floating toast notifications.
+
+---
+
+## 🔄 System Flows & Lifecycles
+
+### 1. Overall System Architecture & Request Lifecycle
 
 ```mermaid
-graph TD
-    A[Client Request] --> B{Middleware}
-    B -->|Zod Validation| C[Controller]
-    B -->|Invalid| D[400 Bad Request]
-    
-    C --> E[Service Layer]
-    C --> F[Solana Utils]
-    
-    E -->|In-memory Storage| G[Contact Data]
-    F -->|@solana/web3.js| H[Solana Network Info]
-    
-    G --> I[Controller]
-    H --> I
-    
-    I --> J[JSON Response]
+sequenceDiagram
+    autonumber
+    actor User as User or Client UI
+    participant React as React 18 Frontend
+    participant Router as Express API Router
+    participant Zod as Zod Validation Middleware
+    participant Controller as Controller
+    participant Solana as Solana Web3 and TweetNaCl
+    participant Storage as In-Memory Storage
+
+    User->>React: Enters address or requests action
+    React->>Router: HTTP Request (POST or GET)
+    Router->>Zod: Validate Request Payload
+    alt Validation Fails
+        Zod-->>React: 400 Bad Request (Formatted Issue)
+        React-->>User: Display Error Highlight
+    else Validation Passes
+        Zod->>Controller: Forward Validated Payload
+        Controller->>Solana: Run Cryptographic Primitives
+        Solana-->>Controller: Return Address or Verification State
+        Controller->>Storage: Update State
+        Storage-->>Controller: Confirmed
+        Controller-->>React: 200 or 201 JSON Response
+        React-->>User: Update UI and Show Toast
+    end
+```
+
+---
+
+### 2. Live On-Curve vs. Off-Curve Address Classification Flow
+
+```mermaid
+flowchart TD
+    A["User Inputs Address"] --> B{"Length 32 to 44 Chars?"}
+    B -->|No| C["Badge: Invalid Base58"]
+    B -->|Yes| D["Debounce 200ms"]
+    D --> E["GET /api/check-address"]
+    E --> F{"Valid Public Key?"}
+    F -->|No| G["Badge: Invalid Solana Address"]
+    F -->|Yes| H{"Is Key On Curve?"}
+    H -->|Yes| I["Badge: On-Curve Wallet Keypair"]
+    H -->|No| J["Badge: Off-Curve PDA Address"]
 ```
 
 ---
@@ -51,16 +87,13 @@ graph TD
 
 ```mermaid
 flowchart LR
-    Owner["Owner Address<br/>(32 bytes)"] --> Seeds
-    TokenProg["Token Program ID<br/>(Tokenkeg... 32 bytes)"] --> Seeds
-    Mint["Token Mint<br/>(USDC/USDT 32 bytes)"] --> Seeds
+    Owner["Owner Wallet Public Key (32 bytes)"] --> Seeds["Derivation Seeds: Owner + Token Program ID + Mint"]
+    TokenProg["Token Program ID (32 bytes)"] --> Seeds
+    Mint["Token Mint Address (32 bytes)"] --> Seeds
 
-    subgraph Derivation ["Solana Derivation Engine"]
-        Seeds["Seed Array<br/>[Owner, TokenProgram, Mint]"] --> Program["Associated Token Program<br/>(ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL)"]
-        Program --> FindPDA["PublicKey.findProgramAddressSync()"]
-    end
-
-    FindPDA --> Result["Deterministic ATA Address<br/>+ Canonical Bump"]
+    Seeds --> Program["Associated Token Program ID"]
+    Program --> FindPDA["findProgramAddressSync"]
+    FindPDA --> Result["Deterministic ATA Address and Canonical Bump"]
 ```
 
 ---
@@ -69,17 +102,17 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    Msg["Message Payload<br/>(UTF-8 String)"] --> MsgBytes["Buffer.from(message, 'utf8')"]
-    Sig["Signature<br/>(Base58 String)"] --> SigBytes["bs58.decode(signature)<br/>(64 bytes)"]
-    Pubkey["Signer Address<br/>(Base58 String)"] --> PubBytes["new PublicKey(address).toBytes()<br/>(32 bytes)"]
+    Msg["Message Payload (UTF-8)"] --> MsgBytes["Convert to UTF-8 Buffer"]
+    Sig["Signature (Base58)"] --> SigBytes["Decode Base58 to 64 Bytes"]
+    Pubkey["Signer Address (Base58)"] --> PubBytes["Decode Public Key to 32 Bytes"]
 
-    MsgBytes --> NaclVerify["nacl.sign.detached.verify()"]
-    SigBytes --> NaclVerify
-    PubBytes --> NaclVerify
+    MsgBytes --> Verify["tweetnacl.sign.detached.verify"]
+    SigBytes --> Verify
+    PubBytes --> Verify
 
-    NaclVerify --> Decision{"Valid Signature?"}
-    Decision -- Yes --> Success["200 OK: { valid: true }<br/>(Green Verified State)"]
-    Decision -- No --> Failure["200 OK: { valid: false }<br/>(Red Signature Mismatch)"]
+    Verify --> Check{"Signature Authentic?"}
+    Check -->|Yes| Valid["Status: 200 Valid Signature"]
+    Check -->|No| Invalid["Status: 200 Invalid Signature"]
 ```
 
 ---
@@ -94,6 +127,7 @@ solana-address-book/
 │   │   │   ├── contactController.ts # Contact directory CRUD & ATA derivation
 │   │   │   └── cryptoController.ts  # Signature verification & PDA calculator
 │   │   ├── middleware/
+│   │   │   ├── rateLimiter.ts       # Zero-dependency sliding window rate limiters
 │   │   │   └── validation.ts        # Zod request validation schemas
 │   │   ├── routes/
 │   │   │   └── api.ts               # Express 5 API route declarations
@@ -104,6 +138,9 @@ solana-address-book/
 │   │   ├── utils/
 │   │   │   └── solana.ts            # @solana/web3.js & tweetnacl utilities
 │   │   └── index.ts                 # Express entry point & static SPA fallback
+│   ├── .env                         # Server environment variables
+│   ├── .env.example
+│   ├── .gitignore
 │   ├── tsconfig.json
 │   └── package.json
 │
@@ -121,19 +158,28 @@ solana-address-book/
 │   │   │   └── Toast.tsx            # Fluid notification toast stack
 │   │   ├── hooks/
 │   │   │   └── useContacts.ts       # React state & API client hook
+│   │   ├── lib/
+│   │   │   └── api.ts               # Configurable API client (VITE_API_BASE_URL)
 │   │   ├── types/
 │   │   │   └── index.ts             # Domain models
 │   │   ├── App.tsx                  # Root layout & tab router
 │   │   ├── main.tsx                 # React DOM mount point
+│   │   ├── vite-env.d.ts            # Client environment variable type declarations
 │   │   └── styles.css               # Design system & interaction tokens
 │   ├── public/
 │   │   └── favicon.svg
+│   ├── .env                         # Client environment variables
+│   ├── .env.example
+│   ├── .gitignore
 │   ├── index.html                   # HTML entry point
+│   ├── vercel.json                  # Vercel SPA routing configuration
 │   ├── vite.config.ts               # Vite proxy config
 │   ├── tsconfig.json
 │   └── package.json
 │
-├── public/                          # Server-side static fallback UI
+├── .env                             # Workspace root environment file
+├── .env.example
+├── .gitignore
 └── README.md                        # Documentation
 ```
 
@@ -189,46 +235,47 @@ export function derivePDA(programId: string, seeds: string[]): { pda: string; bu
 ## 📡 API Endpoints Reference
 
 ### Contacts Directory
-| Method | Endpoint | Description | Sample Request | Sample Response |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/contacts` | Register a new contact with automatic on/off-curve detection | `{"name":"Cold Storage","address":"7YttH9..."}` | `{"id":1,"name":"Cold Storage","address":"7YttH9...","type":"wallet"}` |
-| `GET` | `/api/contacts` | Retrieve contacts (optional `?type=wallet` or `?type=pda`) | — | `[{"id":1,"name":"Cold Storage",...}]` |
-| `GET` | `/api/contacts/:id` | Fetch specific contact by integer ID | — | `{"id":1,"name":"Cold Storage",...}` |
-| `PUT` | `/api/contacts/:id` | Update contact label | `{"name":"Treasury Primary"}` | `{"id":1,"name":"Treasury Primary",...}` |
-| `DELETE` | `/api/contacts/:id` | Remove contact from directory | — | `{"message":"Contact deleted","id":1}` |
+| Method | Endpoint | Rate Limit | Description | Sample Request | Sample Response |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/contacts` | 30 / min | Register new contact with on/off-curve detection | `{"name":"Cold Storage","address":"7YttH9..."}` | `{"id":1,"name":"Cold Storage","address":"7YttH9...","type":"wallet"}` |
+| `GET` | `/api/contacts` | 300 / 15m | Retrieve contacts (optional `?type=wallet` or `?type=pda`) | — | `[{"id":1,"name":"Cold Storage",...}]` |
+| `GET` | `/api/contacts/:id` | 300 / 15m | Fetch specific contact by integer ID | — | `{"id":1,"name":"Cold Storage",...}` |
+| `PUT` | `/api/contacts/:id` | 30 / min | Update contact label | `{"name":"Treasury Primary"}` | `{"id":1,"name":"Treasury Primary",...}` |
+| `DELETE` | `/api/contacts/:id` | 30 / min | Remove contact from directory | — | `{"message":"Contact deleted","id":1}` |
 
 ### Cryptographic & Utility Tools
-| Method | Endpoint | Description | Sample Request | Sample Response |
-| :--- | :--- | :--- | :--- | :--- |
-| `POST` | `/api/contacts/:id/derive-ata` | Derive ATA for contact + token mint | `{"mintAddress":"EPjFWdd5..."}` | `{"ata":"4zMMC...","owner":"7Ytt...","mint":"EPjFW..."}` |
-| `POST` | `/api/verify-ownership` | Verify detached Ed25519 signature | `{"address":"9WzD...","message":"Auth","signature":"3X5i..."}` | `{"valid":true,"verifiedAt":"2026-..."}` |
-| `POST` | `/api/derive-pda` | Derive custom PDA & canonical bump | `{"programId":"1111...","seeds":["vault","7Ytt..."]}` | `{"pda":"Gh9Z...","bump":255,"isOffCurve":true}` |
-| `GET` | `/api/check-address` | Live address verification & curve state | `?address=7YttH9...` | `{"valid":true,"type":"wallet","isOnCurve":true}` |
+| Method | Endpoint | Rate Limit | Description | Sample Request | Sample Response |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/api/contacts/:id/derive-ata` | 60 / min | Derive ATA for contact + token mint | `{"mintAddress":"EPjFWdd5..."}` | `{"ata":"4zMMC...","owner":"7Ytt...","mint":"EPjFW..."}` |
+| `POST` | `/api/verify-ownership` | 60 / min | Verify detached Ed25519 signature | `{"address":"9WzD...","message":"Auth","signature":"3X5i..."}` | `{"valid":true,"verifiedAt":"2026-..."}` |
+| `POST` | `/api/derive-pda` | 60 / min | Derive custom PDA & canonical bump | `{"programId":"1111...","seeds":["vault","7Ytt..."]}` | `{"pda":"Gh9Z...","bump":255,"isOffCurve":true}` |
+| `GET` | `/api/check-address` | 300 / 15m | Live address verification & curve state | `?address=7YttH9...` | `{"valid":true,"type":"wallet","isOnCurve":true}` |
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Deployment Guide (Deploying Separately)
 
-### Prerequisites
-- **Node.js**: v18.0.0 or higher
-- **npm**: v9.0.0 or higher
+### 1. Deploy Frontend (Vercel)
+1. Import your Git repository into **Vercel**.
+2. Set **Root Directory** to `frontend`.
+3. Vercel automatically detects **Vite**:
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+4. In **Environment Variables**, add:
+   - `VITE_API_BASE_URL`: `https://your-backend-domain.com/api`
+   - `VITE_SOLANA_NETWORK`: `devnet`
+   - `VITE_SOLANA_RPC_URL`: `https://api.devnet.solana.com`
+5. Click **Deploy**. SPA rewrites are already handled by [`frontend/vercel.json`](file:///c:/Users/USER/Desktop/100xBootcamp/Web-3/Projects/solana-address-book/frontend/vercel.json).
 
-### Option 1: Unified Dev Server (Backend + UI)
-```bash
-# In solana-address-book root directory:
-npm install
-npm run dev
-```
-Open **`http://localhost:3000`** in your browser.
-
-### Option 2: Fullstack with Vite HMR (Recommended for Frontend Work)
-```bash
-# Terminal 1 - Backend Server:
-npm run dev
-
-# Terminal 2 - React Frontend:
-cd frontend
-npm install
-npm run dev
-```
-Open **`http://localhost:5173`** for Vite hot module replacement (API calls are automatically proxied to port 3000).
+### 2. Deploy Backend (Render, Railway, Fly.io, or VPS)
+1. Set **Root Directory** to `backend`.
+2. Configure build & start commands:
+   - Build Command: `npm install`
+   - Start Command: `npm start` (runs `tsx src/index.ts`)
+3. Set **Environment Variables**:
+   - `PORT`: `3000` (or host assigned port)
+   - `NODE_ENV`: `production`
+   - `FRONTEND_URL`: `https://your-frontend.vercel.app`
+   - `SOLANA_NETWORK`: `devnet`
+   - `SOLANA_RPC_URL`: `https://api.devnet.solana.com`
+4. The backend automatically accepts requests from `FRONTEND_URL` and all `*.vercel.app` preview deployments.
